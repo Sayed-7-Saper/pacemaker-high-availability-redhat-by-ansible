@@ -1,0 +1,120 @@
+---
+- name: Set a hostname server 1
+  hosts: server1
+  become: true
+  tasks:
+    - name: change hostname server1
+      ansible.builtin.hostname:
+        name: pcmk1
+
+    - name: Update the /etc/hosts file with node1 
+      become: yes
+      lineinfile:
+        path: /etc/hosts
+        line: "{{item}} "
+        #line: " 18.234.80.154 pcmk1 "
+        #line: " 54.88.194.91 pcmk2 "  
+        state: present   
+      loop:
+        -  " 18.234.80.154  pcmk1 " 
+        -  " 54.88.194.91  pcmk2 "
+  
+- name: Set a hostname server 2
+  hosts: server2
+  become: true
+  tasks:
+    - name: change hostname server2
+      ansible.builtin.hostname:
+       name: pcmk2   
+
+    - name: Update the /etc/hosts file with node2 
+      become: yes
+      lineinfile:
+        path: /etc/hosts
+        line: "{{item}} "
+        #line: " 18.234.80.154 pcmk1 "
+        #line: " 54.88.194.91 pcmk2 "  
+        state: present   
+      loop:
+        -  " 18.234.80.154  pcmk1 " 
+        -  " 54.88.194.91  pcmk2 "   
+
+
+
+
+- name: create pacemacker high availbaity
+  hosts: all
+  vars_files:
+  - ./vars.yml
+  become: true
+  tasks:
+    - name: add subscription in redhat vm
+      community.general.redhat_subscription:
+        state: present
+        username: test@gmail.com
+        password: red-pass123@
+        auto_attach: true
+
+    - name: Get list of active repositories
+      command: yum repolist
+      args:
+        warn: "{{ (ansible_version.full is version('2.14', '<')) | ternary(false, omit) }}"
+      register: yum_repolist
+      changed_when: false
+      check_mode: false    
+
+    - name: install pacemacker
+      ansible.builtin.dnf:
+        name: # pcs pacemaker fence-agents-all
+        - pcs
+        - pacemaker
+        - fence-agents-all
+        state: present
+      ignore_errors: yes
+
+    - name: Enable and start Pacemaker
+      ansible.builtin.service:
+        name: pcsd.service
+        enabled: yes
+        state: started
+      ignore_errors: yes  
+
+    - name: Enable HA/RS repository (RHEL 8/9)
+      command: >-
+        subscription-manager repos
+        --enable="rhel-{{ ansible_distribution_major_version }}-for-x86_64-{{ (repos_type == 'rs') | ternary('resilientstorage', 'highavailability') }}-rpms"
+      when: >-
+        ['rhel-',ansible_distribution_major_version,'-for-x86_64-',(repos_type == 'rs') | ternary( 'resilientstorage', 'highavailability'),'-rpms'] | join
+        not in yum_repolist.stdout
+        and enable_repos | bool
+        and ansible_distribution_major_version in ['8','9']
+
+    - name: Enable single custom repository
+      command: subscription-manager repos --enable="{{ custom_repository }}"
+      when: "custom_repository is defined and custom_repository not in yum_repolist.stdout|default(custom_repository)"    
+
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
